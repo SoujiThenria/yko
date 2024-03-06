@@ -1,123 +1,176 @@
 package ykoath
 
 import (
-	"bytes"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/binary"
-	"errors"
+	"fmt"
+	"hash"
 
-	"github.com/charmbracelet/log"
 	"github.com/ebfe/scard"
 )
 
-const (
-    INS_PUT = 0x01
-    INS_DELETE = 0x02
-    INS_SET_CODE = 0x03
-    INS_RESET = 0x04
-    INS_LIST = 0xa1
-    INS_CALCULATE = 0xa2
-    INS_VALIDATE = 0xa3
-    INS_CALCULATE_ALL = 0xa4
-    INS_SEND_REMAINING = 0xa5
-
-    ALG_HMAC_SHA1 = 0x01
-    ALG_HMAC_SHA256 = 0x02
-    ALG_HMAC_SHA512 =0x03
-
-    TYP_HOTP = 0x10
-    TYP_TOTP = 0x20
-
-    PRO_ONLY_INCREASING = 0x01
-    PRO_REQUIRE_TOUCH = 0x02
-
-    RES_SUCCESS = 0x9000
-    RES_NO_SPACE = 0x6a84
-    RES_AUTH_REQUIRED = 0x6982
-    RES_WRONG_SYNTAX = 0x6a80
-    RES_MORE_DATA_AVAILABLE = 0x61
-    RES_NO_SUCH_OBJECT = 0x6984
-    RES_RESPONSE_DOES_NOT_MATCH = 0x6984
-    RES_GENERIC_ERROR = 0x6581
-    RES_AUTH_NOT_ENABLED = 0x6984
-
-    TAG_VERSION = 0x79
-    TAG_NAME = 0x71
-    TAG_NAME_LIST = 0x72
-    TAG_CHALLENGE = 0x74
-    TAG_ALGORITHM = 0x7b
-    TAG_KEY = 0x73
-    TAG_PROPERTY = 0x78
-    TAG_IMF = 0x7a
-    TAG_RESPONSE = 0x75
-)
-
 type YKO struct {
-    card *scard.Card
-    AuthRequired bool
-    sd *selectData
+	card       *scard.Card
+	selectData selectData
 }
 
 type sendData struct {
-    CLA byte
-    INS byte
-    P1 byte
-    P2 byte
-    DATA []byte
+	CLA  byte
+	INS  yubiKeyInstruction
+	P1   byte
+	P2   byte
+	DATA []byte
 }
 
-type returnData struct {
-    tag byte
-    data []byte
+type resultData struct {
+	tag  yubiKeyTag
+	data []byte
 }
 
-func New(card *scard.Card) (*YKO) {
-    return &YKO{card: card}
+type yubiKeyError struct {
+	msg  string
+	code yubiKeyResponse
 }
 
-func (y *YKO) send(d *sendData) ([]returnData, error) {
-    command := make([]byte, 4+len(d.DATA))
-    command[0] = d.CLA
-    command[1] = d.INS
-    command[2] = d.P1
-    command[3] = d.P2
-    copy(command[4:], d.DATA)
-    log.Debugf("command: % 02X", command)
-    resp, err := y.card.Transmit(command)
-    if err != nil {
-        return nil, err
-    }
+func (e *yubiKeyError) Error() string { return e.msg }
 
-    for resp[len(resp)-2] == RES_MORE_DATA_AVAILABLE {
-        nextResp, err := y.card.Transmit([]byte{0x00, INS_SEND_REMAINING, 0x00, 0x00})
-        if err != nil {
-            return nil, err
-        }
-        resp = append(resp[:len(resp)-2], nextResp...)
-    }
-
-    log.Debugf("resp: % 02X", resp)
-    return parse(resp)
+func New(c *scard.Card) *YKO {
+	return &YKO{card: c}
 }
 
-func parse(data []byte) ([]returnData, error) {
-    test := make([]byte, 2)
-    binary.BigEndian.PutUint16(test, RES_SUCCESS)
-    if !bytes.Equal(data[len(data) - 2:], test) {
-        return nil, errors.New("Some dump return error (TODO)") // TODO: return some error
-    }
+func (y *YKO) AuthRequired() bool { return len(y.selectData.challange) > 0 }
 
-    result := []returnData{}
-    for i := 0; i < len(data[:len(data) - 2]); {
-        tag := data[i]
-        i++
-        dataLen := int(data[i])
-        i++
-        dataData := data[i:i+dataLen]
-        result = append(result, returnData{
-            tag: tag,
-            data: dataData,
-        })
-        i+=dataLen
-    }
-    return result, nil
+func (y *YKO) send(d *sendData) ([]resultData, error) {
+	command := make([]byte, 5+len(d.DATA))
+	command[0] = d.CLA
+	command[1] = byte(d.INS)
+	command[2] = d.P1
+	command[3] = d.P2
+	command[4] = byte(len(d.DATA))
+	copy(command[5:], d.DATA)
+
+	res, err := y.card.Transmit(command)
+	if err != nil {
+		return nil, &yubiKeyError{msg: err.Error(), code: 0}
+	}
+
+	for yubiKeyResponse(res[len(res)-2]) == RES_MORE_DATA_AVAILABLE {
+		moreRes, err := y.card.Transmit([]byte{0x00, byte(SEND_REMAINING), 0x00, 0x00})
+		if err != nil {
+			return nil, &yubiKeyError{msg: err.Error(), code: 0}
+		}
+		res = append(res[:len(res)-2], moreRes...)
+	}
+
+	resp_code := binary.BigEndian.Uint16(res[len(res)-2:])
+	switch yubiKeyResponse(resp_code) {
+	case RES_SUCCESS:
+		return parse(res[:len(res)-2]), nil
+	case RES_NO_SPACE:
+		return nil, &yubiKeyError{msg: "The YubiKey returned an error", code: RES_NO_SPACE}
+	case RES_AUTH_REQUIRED:
+		return nil, &yubiKeyError{msg: "The YubiKey returned an error", code: RES_AUTH_REQUIRED}
+	case RES_WRONG_SYNTAX:
+		return nil, &yubiKeyError{msg: "The YubiKey returned an error", code: RES_WRONG_SYNTAX}
+	case RES_NO_SUCH_OBJECT: // can also be RES_AUTH_NOT_ENABLED or RES_RESPONSE_DOES_NOT_MATCH
+		return nil, &yubiKeyError{msg: "The YubiKey returned an error", code: RES_NO_SUCH_OBJECT}
+	case RES_GENERIC_ERROR:
+		return nil, &yubiKeyError{msg: "The YubiKey returned an error", code: RES_GENERIC_ERROR}
+	}
+
+	return nil, &yubiKeyError{msg: "Some thing went wrong, unidentified response code", code: yubiKeyResponse(resp_code)}
+}
+
+func parse(data []byte) []resultData {
+	result := []resultData{}
+	for i := 0; i < len(data); {
+		tag := data[i]
+		i++
+		dataLen := int(data[i])
+		i++
+		dataData := data[i : i+dataLen]
+		result = append(result, resultData{
+			tag:  yubiKeyTag(tag),
+			data: dataData,
+		})
+		i += dataLen
+	}
+	return result
+}
+
+func buildError(inst yubiKeyInstruction, err error) error {
+	// TODO: make this global ???
+	var ErrorMessages = map[yubiKeyResponse]string{
+		RES_SUCCESS:        "SUCCESS",
+		RES_NO_SPACE:       "NO SPACE",
+		RES_AUTH_REQUIRED:  "AUTH REQUIRED",
+		RES_WRONG_SYNTAX:   "WRONG SYNTAX",
+		RES_NO_SUCH_OBJECT: "NO SUCH OBJECT",
+		// RES_RESPONSE_DOES_NOT_MATCH: "RESPONSE DOES NOT MATCH",
+		// RES_AUTH_NOT_ENABLED:        "AUTH NOT ENABLED",
+		RES_MORE_DATA_AVAILABLE: "MORE DATA AVAILABLE",
+		RES_GENERIC_ERROR:       "GENERIC ERROR",
+	}
+	switch err.(type) {
+	case *yubiKeyError:
+		// TODO: fix
+		test := err.(*yubiKeyError)
+		errMsg := ErrorMessages[test.code]
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("% 02X", test.code)
+		}
+
+		fnName := ""
+		if test.code == RES_NO_SUCH_OBJECT {
+			switch inst {
+			case VALIDATE:
+				errMsg = "AUTH NOT ENABLED"
+			case SET_CODE:
+				errMsg = "RESPONSE DOES NOT MATCH"
+			}
+		}
+		if test.code == RES_WRONG_SYNTAX && inst == VALIDATE {
+			errMsg = "WRONG PASSWORD"
+		}
+
+		switch inst {
+		case PUT:
+			fnName = "PUT"
+		case DELETE:
+			fnName = "DELETE"
+		case SET_CODE:
+			fnName = "SET_CODE"
+		case RESET:
+			fnName = "RESET"
+		case LIST:
+			fnName = "LIST"
+		case CALCULATE:
+			fnName = "CALCULATE (or SELECT)"
+		case VALIDATE:
+			fnName = "VALIDATE"
+		case CALCULATE_ALL:
+			fnName = "CALCULATE_ALL"
+		case SEND_REMAINING:
+			fnName = "SEND_REMAINING"
+		}
+		return fmt.Errorf("%s: %s: %s", fnName, test.msg, errMsg)
+	case nil:
+		return nil
+	}
+	return err
+}
+
+func (a yubiKeyAlgo) getHashFunc() func() hash.Hash {
+	switch a {
+	case HMAC_SHA1:
+		return sha1.New
+	case HMAC_SHA256:
+		return sha256.New
+	case HMAC_SHA512:
+		return sha512.New
+	default:
+		return sha1.New
+	}
 }

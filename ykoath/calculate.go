@@ -4,42 +4,35 @@ import (
 	"encoding/binary"
 	"fmt"
 	"time"
-
-	"github.com/charmbracelet/log"
 )
 
 func (y *YKO) Calculate(name string) (string, error) {
+    name_data := make([]byte, len(name) + 2)
+    name_data[0] = byte(NAME)
+    name_data[1] = byte(len(name))
+    copy(name_data[2:], []byte(name))
 
-    name_part := make([]byte, 2+len(name))
-    name_part[0] = TAG_NAME
-    name_part[1] = byte(len(name))
-    copy(name_part[2:], name)
+    challange := make([]byte, CHALLANG_LEN + 2)
+    challange[0] = byte(CHALLENGE)
+    challange[1] = CHALLANG_LEN
+    binary.BigEndian.PutUint64(challange[2:], uint64(time.Now().Unix() / 30))
 
-    challange := make([]byte, 2+8)
-    challange[0] = TAG_CHALLENGE
-    challange[1] = byte(8)
-    timestamp := time.Now().Unix() / 30
-    binary.BigEndian.PutUint64(challange[2:], uint64(timestamp))
+    command := make([]byte, len(name_data) + len(challange))
+    copy(command, name_data)
+    copy(command[len(name_data):], challange)
 
-    command := make([]byte, 1 + len(name_part) + len(challange))
-    command[0] = byte(len(name_part) + len(challange))
-    copy(command[1:], name_part)
-    copy(command[1+len(name_part):], challange)
+	res, err := y.send(&sendData{
+		CLA:  0x00,
+		INS:  CALCULATE,
+		P1:   0x00,
+		P2:   0x01,
+		DATA: command,
+	})
+	if err != nil {
+		return "", buildError(CALCULATE, err)
+	}
 
-    resp, err := y.send(&sendData{
-        CLA: 0x00,
-        INS: INS_CALCULATE,
-        P1: 0x00,
-        P2: 0x01,
-        DATA: command,
-    })
-    if err != nil {
-        return "", err
-    }
-
-    log.Debug("Calculate", "response", resp)
-
-    for _,e := range resp {
+    for _,e := range res {
         switch (e.tag) {
         case 0x76:
             dig := int(e.data[0])
@@ -49,5 +42,6 @@ func (y *YKO) Calculate(name string) (string, error) {
             return "", fmt.Errorf("list: invalid tag: % 02X", e.tag)
         }
     }
-    return "", nil
+
+    return "", fmt.Errorf("calgulate: something went wrong")
 }
