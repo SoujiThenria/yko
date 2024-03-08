@@ -18,29 +18,29 @@ func UpdateCode(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-        switch {
-        case key.Matches(msg, keys.Quit):
+		switch {
+		case key.Matches(msg, keys.Quit):
 			return m, tea.Quit
-        case key.Matches(msg, keys.Help):
-            m.help.ShowAll = !m.help.ShowAll
-        case key.Matches(msg, keys.Copy):
-            clipboard.Write(clipboard.FmtText, []byte(m.code))
-        case key.Matches(msg, keys.List):
-            m.state = LIST_ACCOUNTS
-            return m, nil
-        case key.Matches(msg, keys.ListSearch):
-            m.state = LIST_ACCOUNTS
-            return m, func() tea.Msg { return msg }
-        }
+		case key.Matches(msg, keys.Help):
+			m.help.ShowAll = !m.help.ShowAll
+		case key.Matches(msg, keys.Copy):
+			clipboard.Write(clipboard.FmtText, []byte(m.code))
+		case key.Matches(msg, keys.List):
+			m.state = LIST_ACCOUNTS
+			return m, nil
+		case key.Matches(msg, keys.ListSearch):
+			m.state = LIST_ACCOUNTS
+			return m, func() tea.Msg { return msg }
+		}
 	case tea.WindowSizeMsg:
 		h, _ := m.docStyle.GetFrameSize()
 		m.progress.Width = msg.Width - h
-        if (m.progress.Width > 40) {
-            m.progress.Width = 40
-        }
+		if m.progress.Width > 40 {
+			m.progress.Width = 40
+		}
 
 		m.help.Width = msg.Width - h
-        return m, nil
+		return m, nil
 	case tickMsg:
 		m.progressPerc += 0.0333333333
 		if m.progressPerc > 1.0 {
@@ -71,14 +71,12 @@ func tickCmd() tea.Cmd {
 	})
 }
 
-
-
 // TODO: Put this somewhere else...
 type keyMap struct {
-	Quit key.Binding
-	Help key.Binding
-	Copy key.Binding
-	List key.Binding
+	Quit       key.Binding
+	Help       key.Binding
+	Copy       key.Binding
+	List       key.Binding
 	ListSearch key.Binding
 }
 
@@ -106,12 +104,12 @@ var keys = keyMap{
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.Copy, k.List ,k.Quit}
+	return []key.Binding{k.Help, k.Copy, k.List, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Copy, k.List, k.ListSearch}, // second column
-		{k.Help, k.Quit}, // second column
+		{k.Help, k.Quit},               // second column
 	}
 }

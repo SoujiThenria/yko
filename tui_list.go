@@ -18,9 +18,9 @@ func UpdateList(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if msg.String() == "/" {
-            m.list.FilterInput.SetValue("")
-            break
-        }
+			m.list.FilterInput.SetValue("")
+			break
+		}
 		if msg.String() == "enter" {
 			if m.list.SettingFilter() {
 				break

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"yko/ykoath"
 
-    "golang.design/x/clipboard"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
@@ -14,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/ebfe/scard"
+	"golang.design/x/clipboard"
 	"golang.org/x/term"
 )
 
@@ -36,9 +36,9 @@ func nextStep() executeNextUpdate {
 }
 
 func main() {
-    if err := clipboard.Init(); err != nil {
-        log.Fatal("Cannot init the clipboard", "error", err)
-    }
+	if err := clipboard.Init(); err != nil {
+		log.Fatal("Cannot init the clipboard", "error", err)
+	}
 
 	ctx, card, err := setupYubiKey()
 	if err != nil {
@@ -94,7 +94,7 @@ func main() {
 		code:         "",
 	}
 	m.list.Title = m.listName
-    m.progress.ShowPercentage = false
+	m.progress.ShowPercentage = false
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
