@@ -28,6 +28,9 @@ func UpdateCode(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
         case key.Matches(msg, keys.List):
             m.state = LIST_ACCOUNTS
             return m, nil
+        case key.Matches(msg, keys.ListSearch):
+            m.state = LIST_ACCOUNTS
+            return m, func() tea.Msg { return msg }
         }
 	case tea.WindowSizeMsg:
 		h, _ := m.docStyle.GetFrameSize()
@@ -76,6 +79,7 @@ type keyMap struct {
 	Help key.Binding
 	Copy key.Binding
 	List key.Binding
+	ListSearch key.Binding
 }
 
 var keys = keyMap{
@@ -89,20 +93,25 @@ var keys = keyMap{
 	),
 	Copy: key.NewBinding(
 		key.WithKeys("enter", "c"),
-		key.WithHelp("enter/c", "Copy"),
+		key.WithHelp("c", "Copy"),
 	),
 	List: key.NewBinding(
 		key.WithKeys("l", "ctrl+o"),
 		key.WithHelp("l", "Back to List"),
 	),
+	ListSearch: key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "Back to List and search"),
+	),
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.Copy, k.List, k.Quit}
+	return []key.Binding{k.Help, k.Copy, k.List ,k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Help, k.Copy, k.List, k.Quit}, // second column
+		{k.Copy, k.List, k.ListSearch}, // second column
+		{k.Help, k.Quit}, // second column
 	}
 }
