@@ -78,14 +78,10 @@ func main() {
 		a[i] = accounts{acc: keyList[i].Name}
 	}
 
-	var style = lipgloss.NewStyle().
-		Margin(1, 2)
-
 	m := model{
 		state: LIST_ACCOUNTS,
 		key:   yKey,
-		// docStyle: lipgloss.NewStyle().Margin(1, 2),
-		docStyle:     style,
+		docStyle: lipgloss.NewStyle().Margin(1, 2),
 		list:         list.New(a, list.NewDefaultDelegate(), 0, 0),
 		listName:     "YubiKey Accounts",
 		progress:     progress.New(),
